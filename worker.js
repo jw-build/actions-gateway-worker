@@ -6,6 +6,10 @@ export default {
       return json(200, { ok: true });
     }
 
+    if (url.pathname === "/debug-env") {
+      return json(200, { API_KEY_set: !!env.API_KEY });
+    }
+
     if (url.pathname !== "/v1/dispatch") {
       return json(404, { ok: false, error: "not_found" });
     }
@@ -43,6 +47,8 @@ export default {
       scan: { event_type: "scan", validateArgs: () => null },
       report: { event_type: "report", validateArgs: () => null },
     };
+
+    cosr （
 
     const spec = ACTIONS[action];
     if (!spec) {
