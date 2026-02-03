@@ -1,19 +1,27 @@
+// worker.js
+// Cloudflare Worker: Actions Gateway (v1)
+// - Auth via x-api-key against env.API_KEY / env.WRANGLER_API_KEY / env.API_KEYS (comma-separated)
+// - POST /v1/dispatch accepts { action, args, request_id? }
+// - Validates action + args schema
+// - Dispatches to GitHub repository_dispatch with event_type="dispatch" (fixed)
+// - Places { request_id, action, args } under client_payload
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
-    // 1) health
+    // ---- health ----
     if (url.pathname === "/health") {
       return json(200, { ok: true });
     }
 
-    // 2) debug env (no secrets leaked)
+    // ---- debug env ----
     if (url.pathname === "/debug-env") {
       const keys = getAcceptedKeys(env);
       return json(200, {
         API_KEY_set: !!env.API_KEY,
         WRANGLER_API_KEY_set: !!env.WRANGLER_API_KEY,
-        API_KEYS_set: !!env.API_KEYS, // optional, comma-separated
+        API_KEYS_set: !!env.API_KEYS,
         accepted_keys_count: keys.length,
         GH_OWNER_set: !!env.GH_OWNER,
         GH_REPO_set: !!env.GH_REPO,
@@ -21,38 +29,37 @@ export default {
       });
     }
 
-    // 3) route
+    // ---- routing ----
     if (url.pathname !== "/v1/dispatch") {
       return json(404, { ok: false, error: "not_found" });
     }
-
-    // 4) method
     if (request.method !== "POST") {
       return json(405, { ok: false, error: "method_not_allowed" });
     }
 
-    // 5) API key auth
+    // ---- auth ----
     const acceptedKeys = getAcceptedKeys(env);
     if (acceptedKeys.length === 0) {
       return json(500, { ok: false, error: "missing_api_key_config" });
     }
-
     const apiKey = request.headers.get("x-api-key");
     if (!apiKey || !acceptedKeys.includes(apiKey)) {
       return json(401, { ok: false, error: "unauthorized" });
     }
 
-    // 6) body json
+    // ---- parse body ----
     let body;
     try {
       body = await request.json();
-    } catch (error) {
+    } catch {
       return json(400, { ok: false, error: "invalid_json" });
     }
 
-    const action = body && body.action;
-    const args = body && body.args;
-    const requestId = body && body.request_id ? body.request_id : crypto.randomUUID();
+    const action = body?.action;
+    const args = body?.args;
+    const requestId = isNonEmptyString(body?.request_id)
+      ? body.request_id
+      : crypto.randomUUID();
 
     if (!isNonEmptyString(action)) {
       return json(400, { ok: false, error: "invalid_action" });
@@ -61,12 +68,13 @@ export default {
       return json(400, { ok: false, error: "invalid_args" });
     }
 
-    // 7) action allowlist
+    // ---- action policy + validation ----
     const ACTIONS = {
-      deploy: { event_type: "deploy", validateArgs: validateDeployArgs },
-      rollback: { event_type: "rollback", validateArgs: validateRollbackArgs },
-      scan: { event_type: "scan", validateArgs: () => null },
-      report: { event_type: "report", validateArgs: () => null },
+      deploy: { validateArgs: validateDeployArgs },
+      rollback: { validateArgs: validateRollbackArgs },
+      scan: { validateArgs: () => null },
+      report: { validateArgs: () => null },
+      ping: { validateArgs: () => null }, // optional: allow ping end-to-end
     };
 
     const spec = ACTIONS[action];
@@ -83,7 +91,7 @@ export default {
       return json(400, { ok: false, error: "args_not_valid", detail: err });
     }
 
-    // 8) github config
+    // ---- github config ----
     if (!env.GH_OWNER || !env.GH_REPO || !env.GH_TOKEN) {
       return json(500, {
         ok: false,
@@ -96,9 +104,14 @@ export default {
       });
     }
 
-    // 9) dispatch payload
+    // ---- github dispatch payload ----
+    // IMPORTANT: event_type is fixed to "dispatch"
+    // Workflow should use:
+    //   on:
+    //     repository_dispatch:
+    //       types: [dispatch]
     const payload = {
-      event_type: spec.event_type,
+      event_type: "dispatch",
       client_payload: {
         request_id: requestId,
         action,
@@ -108,7 +121,6 @@ export default {
 
     const ghUrl = `https://api.github.com/repos/${env.GH_OWNER}/${env.GH_REPO}/dispatches`;
 
-    // 10) call github
     let res;
     try {
       res = await fetch(ghUrl, {
@@ -121,14 +133,15 @@ export default {
         },
         body: JSON.stringify(payload),
       });
-    } catch (error) {
+    } catch (e) {
       return json(502, {
         ok: false,
         error: "github_dispatch_failed",
-        detail: String(error),
+        detail: String(e),
       });
     }
 
+    // GitHub returns 204 No Content on success
     if (res.status === 204) {
       return json(200, { ok: true, dispatched: true, request_id: requestId });
     }
@@ -143,16 +156,12 @@ export default {
   },
 };
 
-// Accept keys from:
-// - API_KEY (single)
-// - WRANGLER_API_KEY (single)
-// - API_KEYS (optional comma-separated list)
+// ---------- helpers ----------
+
 function getAcceptedKeys(env) {
   const keys = [];
-
   if (env.API_KEY) keys.push(String(env.API_KEY));
   if (env.WRANGLER_API_KEY) keys.push(String(env.WRANGLER_API_KEY));
-
   if (env.API_KEYS) {
     const extra = String(env.API_KEYS)
       .split(",")
@@ -160,8 +169,6 @@ function getAcceptedKeys(env) {
       .filter(Boolean);
     keys.push(...extra);
   }
-
-  // de-dup
   return Array.from(new Set(keys));
 }
 
