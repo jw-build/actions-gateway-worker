@@ -47,8 +47,7 @@ export default {
       scan: { event_type: "scan", validateArgs: () => null },
       report: { event_type: "report", validateArgs: () => null },
     };
-
-    cosr （
+    
 
     const spec = ACTIONS[action];
     if (!spec) {
