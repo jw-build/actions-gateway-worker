@@ -7,8 +7,10 @@ export default {
     }
 
     if (url.pathname === "/debug-env") {
-      const key = env.API_KEY || env.WRANGLER_API_KEY;
-      return json(200, { API_KEY_set: !!key });
+      return json(200, {
+        API_KEY_set: !!env.API_KEY,
+        WRANGLER_API_KEY_set: !!env.WRANGLER_API_KEY,
+      });
     }
 
     if (url.pathname !== "/v1/dispatch") {
@@ -19,12 +21,11 @@ export default {
       return json(405, { ok: false, error: "method_not_allowed" });
     }
 
-    const expectedKey = env.API_KEY || env.WRANGLER_API_KEY;
-    if (!expectedKey) {
+
       return json(500, { ok: false, error: "missing_api_key_config" });
     }
     const apiKey = request.headers.get("x-api-key");
-    if (!apiKey || apiKey !== expectedKey) {
+    if (!apiKey || !acceptedKeys.includes(apiKey)) {
       return json(401, { ok: false, error: "unauthorized" });
     }
 
