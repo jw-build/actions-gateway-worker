@@ -7,8 +7,10 @@ export default {
     }
 
     if (url.pathname === "/debug-env") {
-      const key = env.API_KEY || env.WRANGLER_API_KEY;
-      return json(200, { API_KEY_set: !!key });
+      return json(200, {
+        API_KEY_set: !!env.API_KEY,
+        WRANGLER_API_KEY_set: !!env.WRANGLER_API_KEY,
+      });
     }
 
     if (url.pathname !== "/v1/dispatch") {
@@ -19,22 +21,25 @@ export default {
       return json(405, { ok: false, error: "method_not_allowed" });
     }
 
-    const expectedKey = env.API_KEY || env.WRANGLER_API_KEY;
+    const acceptedKeys = [env.API_KEY, env.WRANGLER_API_KEY].filter(Boolean);
+    if (acceptedKeys.length === 0) {
+      return json(500, { ok: false, error: "missing_api_key_config" });
+    }
     const apiKey = request.headers.get("x-api-key");
-    if (!apiKey || apiKey !== expectedKey) {
+    if (!apiKey || !acceptedKeys.includes(apiKey)) {
       return json(401, { ok: false, error: "unauthorized" });
     }
 
     let body;
     try {
       body = await request.json();
-    } catch {
+    } catch (error) {
       return json(400, { ok: false, error: "invalid_json" });
     }
 
-    const action = body?.action;
-    const args = body?.args;
-    let requestId = body?.request_id ?? crypto.randomUUID();
+    const action = body && body.action;
+    const args = body && body.args;
+    const requestId = body && body.request_id ? body.request_id : crypto.randomUUID();
 
     if (!isNonEmptyString(action)) {
       return json(400, { ok: false, error: "invalid_action" });
@@ -73,24 +78,51 @@ export default {
       },
     };
 
+    if (!env.GH_OWNER || !env.GH_REPO || !env.GH_TOKEN) {
+      return json(500, {
+        ok: false,
+        error: "missing_github_config",
+        detail: {
+          GH_OWNER: !!env.GH_OWNER,
+          GH_REPO: !!env.GH_REPO,
+          GH_TOKEN: !!env.GH_TOKEN,
+        },
+      });
+    }
+
     const ghUrl = `https://api.github.com/repos/${env.GH_OWNER}/${env.GH_REPO}/dispatches`;
 
-    const res = await fetch(ghUrl, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${env.GH_TOKEN}`,
-        Accept: "application/vnd.github+json",
-        "User-Agent": "actions-gateway-worker",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(payload),
-    });
+    let res;
+    try {
+      res = await fetch(ghUrl, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${env.GH_TOKEN}`,
+          Accept: "application/vnd.github+json",
+          "User-Agent": "actions-gateway-worker",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+    } catch (error) {
+      return json(502, {
+        ok: false,
+        error: "github_dispatch_failed",
+        detail: String(error),
+      });
+    }
 
     if (res.status === 204) {
       return json(200, { ok: true, dispatched: true, request_id: requestId });
     }
 
-    return json(502, { ok: false, error: "github_dispatch_failed" });
+    const responseBody = await res.text();
+    return json(502, {
+      ok: false,
+      error: "github_dispatch_failed",
+      status: res.status,
+      response: responseBody,
+    });
   },
 };
 
