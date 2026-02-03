@@ -20,6 +20,9 @@ export default {
     }
 
     const expectedKey = env.API_KEY || env.WRANGLER_API_KEY;
+    if (!expectedKey) {
+      return json(500, { ok: false, error: "missing_api_key_config" });
+    }
     const apiKey = request.headers.get("x-api-key");
     if (!apiKey || apiKey !== expectedKey) {
       return json(401, { ok: false, error: "unauthorized" });
@@ -73,24 +76,51 @@ export default {
       },
     };
 
+    if (!env.GH_OWNER || !env.GH_REPO || !env.GH_TOKEN) {
+      return json(500, {
+        ok: false,
+        error: "missing_github_config",
+        detail: {
+          GH_OWNER: !!env.GH_OWNER,
+          GH_REPO: !!env.GH_REPO,
+          GH_TOKEN: !!env.GH_TOKEN,
+        },
+      });
+    }
+
     const ghUrl = `https://api.github.com/repos/${env.GH_OWNER}/${env.GH_REPO}/dispatches`;
 
-    const res = await fetch(ghUrl, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${env.GH_TOKEN}`,
-        Accept: "application/vnd.github+json",
-        "User-Agent": "actions-gateway-worker",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(payload),
-    });
+    let res;
+    try {
+      res = await fetch(ghUrl, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${env.GH_TOKEN}`,
+          Accept: "application/vnd.github+json",
+          "User-Agent": "actions-gateway-worker",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+    } catch (error) {
+      return json(502, {
+        ok: false,
+        error: "github_dispatch_failed",
+        detail: String(error),
+      });
+    }
 
     if (res.status === 204) {
       return json(200, { ok: true, dispatched: true, request_id: requestId });
     }
 
-    return json(502, { ok: false, error: "github_dispatch_failed" });
+    const responseBody = await res.text();
+    return json(502, {
+      ok: false,
+      error: "github_dispatch_failed",
+      status: res.status,
+      response: responseBody,
+    });
   },
 };
 

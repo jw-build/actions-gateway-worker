@@ -56,6 +56,14 @@ After saving, the Worker sends dispatches to the `jw-build/cloudflare-worker-act
    ```
    Expect: `{"ok":true,"dispatched":true,"request_id":"test-001"}` if GitHub returns 204.
 
+## Troubleshooting errors
+
+| Error | Meaning | Fix |
+|-------|---------|-----|
+| `missing_api_key_config` | Worker has no `API_KEY` secret set. | Add `API_KEY` in Cloudflare → Worker → Settings → Variables, then redeploy. |
+| `missing_github_config` | `GH_OWNER`, `GH_REPO`, or `GH_TOKEN` is missing. | Add the missing variable/secret and redeploy. |
+| `github_dispatch_failed` | GitHub rejected the dispatch. | Check `status`/`response` for details; verify token scopes, repo name, and workflow `repository_dispatch` config. |
+
 ## Local run (Actions side)
 
 ```bash
