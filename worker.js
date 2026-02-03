@@ -2,31 +2,47 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
+    // 1) health
     if (url.pathname === "/health") {
       return json(200, { ok: true });
     }
 
+    // 2) debug env (no secrets leaked)
     if (url.pathname === "/debug-env") {
+      const keys = getAcceptedKeys(env);
       return json(200, {
         API_KEY_set: !!env.API_KEY,
         WRANGLER_API_KEY_set: !!env.WRANGLER_API_KEY,
+        API_KEYS_set: !!env.API_KEYS, // optional, comma-separated
+        accepted_keys_count: keys.length,
+        GH_OWNER_set: !!env.GH_OWNER,
+        GH_REPO_set: !!env.GH_REPO,
+        GH_TOKEN_set: !!env.GH_TOKEN,
       });
     }
 
+    // 3) route
     if (url.pathname !== "/v1/dispatch") {
       return json(404, { ok: false, error: "not_found" });
     }
 
+    // 4) method
     if (request.method !== "POST") {
       return json(405, { ok: false, error: "method_not_allowed" });
     }
+
+    // 5) API key auth
+    const acceptedKeys = getAcceptedKeys(env);
+    if (acceptedKeys.length === 0) {
       return json(500, { ok: false, error: "missing_api_key_config" });
     }
+
     const apiKey = request.headers.get("x-api-key");
     if (!apiKey || !acceptedKeys.includes(apiKey)) {
       return json(401, { ok: false, error: "unauthorized" });
     }
 
+    // 6) body json
     let body;
     try {
       body = await request.json();
@@ -45,6 +61,7 @@ export default {
       return json(400, { ok: false, error: "invalid_args" });
     }
 
+    // 7) action allowlist
     const ACTIONS = {
       deploy: { event_type: "deploy", validateArgs: validateDeployArgs },
       rollback: { event_type: "rollback", validateArgs: validateRollbackArgs },
@@ -66,15 +83,7 @@ export default {
       return json(400, { ok: false, error: "args_not_valid", detail: err });
     }
 
-    const payload = {
-      event_type: spec.event_type,
-      client_payload: {
-        request_id: requestId,
-        action,
-        args,
-      },
-    };
-
+    // 8) github config
     if (!env.GH_OWNER || !env.GH_REPO || !env.GH_TOKEN) {
       return json(500, {
         ok: false,
@@ -87,8 +96,19 @@ export default {
       });
     }
 
+    // 9) dispatch payload
+    const payload = {
+      event_type: spec.event_type,
+      client_payload: {
+        request_id: requestId,
+        action,
+        args,
+      },
+    };
+
     const ghUrl = `https://api.github.com/repos/${env.GH_OWNER}/${env.GH_REPO}/dispatches`;
 
+    // 10) call github
     let res;
     try {
       res = await fetch(ghUrl, {
@@ -122,6 +142,28 @@ export default {
     });
   },
 };
+
+// Accept keys from:
+// - API_KEY (single)
+// - WRANGLER_API_KEY (single)
+// - API_KEYS (optional comma-separated list)
+function getAcceptedKeys(env) {
+  const keys = [];
+
+  if (env.API_KEY) keys.push(String(env.API_KEY));
+  if (env.WRANGLER_API_KEY) keys.push(String(env.WRANGLER_API_KEY));
+
+  if (env.API_KEYS) {
+    const extra = String(env.API_KEYS)
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    keys.push(...extra);
+  }
+
+  // de-dup
+  return Array.from(new Set(keys));
+}
 
 function validateDeployArgs(args) {
   if (!["dev", "staging", "prod"].includes(args.env)) {
