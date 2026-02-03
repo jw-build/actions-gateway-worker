@@ -1,0 +1,19 @@
+name: worker
+
+on:
+  repository_dispatch:
+    types: [dispatch]
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: run worker
+        env:
+          ACTION: ${{ github.event.client_payload.action }}
+          ENV: ${{ github.event.client_payload.env }}
+          REQUEST_ID: ${{ github.event.client_payload.request_id }}
+        run: |
+          python3 worker/run.py
