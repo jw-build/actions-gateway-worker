@@ -21,8 +21,7 @@ export default {
       return json(405, { ok: false, error: "method_not_allowed" });
     }
 
-    const acceptedKeys = [env.API_KEY, env.WRANGLER_API_KEY].filter(Boolean);
-    if (acceptedKeys.length === 0) {
+
       return json(500, { ok: false, error: "missing_api_key_config" });
     }
     const apiKey = request.headers.get("x-api-key");
