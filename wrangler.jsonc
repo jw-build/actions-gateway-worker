@@ -3,7 +3,7 @@
   "main": "worker.js",
   "compatibility_date": "2026-02-03",
   "vars": {
-    "API_KEY": "testkey123",
+    "WRANGLER_API_KEY": "testkey123",
     "GH_OWNER": "jw-build",
     "GH_REPO": "cloudflare-worker-actions-gateway"
   }
