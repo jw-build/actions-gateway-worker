@@ -37,6 +37,25 @@ Configure under **Cloudflare Dashboard → Workers & Pages → your Worker → S
 
 After saving, the Worker sends dispatches to the `jw-build/cloudflare-worker-actions-gateway` repo.
 
+## Next steps after deploy
+
+1. **Set Cloudflare Variables** (if not done): Worker → Settings → Variables → add `API_KEY`, `GH_TOKEN` (Secrets), `GH_OWNER`, `GH_REPO` (Variables). Redeploy or use “Save and deploy” so the Worker picks them up.
+
+2. **Target repo**: Ensure `jw-build/cloudflare-worker-actions-gateway` exists and has a workflow that listens for `repository_dispatch` with event types `deploy`, `rollback`, `scan`, `report` (and uses `client_payload.action` / `client_payload.args`).
+
+3. **Test health**:  
+   `curl https://actions-gateway-worker.<your-subdomain>.workers.dev/health`  
+   Expect: `{"ok":true}`.
+
+4. **Test dispatch** (replace `<API_KEY>` and base URL):
+   ```bash
+   curl -X POST https://actions-gateway-worker.<your-subdomain>.workers.dev/v1/dispatch \
+     -H "x-api-key: <API_KEY>" \
+     -H "Content-Type: application/json" \
+     -d '{"action":"scan","args":{},"request_id":"test-001"}'
+   ```
+   Expect: `{"ok":true,"dispatched":true,"request_id":"test-001"}` if GitHub returns 204.
+
 ## Local run (Actions side)
 
 ```bash
