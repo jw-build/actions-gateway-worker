@@ -25,7 +25,7 @@ Configure under **Cloudflare Dashboard → Workers & Pages → your Worker → S
 
 | Variable | Description |
 |----------|-------------|
-| `API_KEY` | Your secret; request header `x-api-key` must match this |
+| `API_KEY` | Your secret; request header `x-api-key` must match this (or `WRANGLER_API_KEY` when present). |
 | `GH_TOKEN` | GitHub Fine-grained PAT with repo access to trigger dispatch on the target repo |
 
 **Variables (plain)**
@@ -39,7 +39,7 @@ After saving, the Worker sends dispatches to the `jw-build/cloudflare-worker-act
 
 ## Next steps after deploy
 
-1. **Set Cloudflare Variables** (if not done): Worker → Settings → Variables → add `API_KEY`, `GH_TOKEN` (Secrets), `GH_OWNER`, `GH_REPO` (Variables). Redeploy or use “Save and deploy” so the Worker picks them up.
+1. **Set Cloudflare Variables** (if not done): Worker → Settings → Variables → add `API_KEY`, `GH_TOKEN` (Secrets), `GH_OWNER`, `GH_REPO` (Variables). Redeploy or use “Save and deploy” so the Worker picks them up. If you are using the repo’s `wrangler.jsonc` in previews, `WRANGLER_API_KEY` is also accepted.
 
 2. **Target repo**: Ensure `jw-build/cloudflare-worker-actions-gateway` exists and has a workflow that listens for `repository_dispatch` with event types `deploy`, `rollback`, `scan`, `report` (and uses `client_payload.action` / `client_payload.args`).
 
@@ -55,6 +55,14 @@ After saving, the Worker sends dispatches to the `jw-build/cloudflare-worker-act
      -d '{"action":"scan","args":{},"request_id":"test-001"}'
    ```
    Expect: `{"ok":true,"dispatched":true,"request_id":"test-001"}` if GitHub returns 204.
+
+## Troubleshooting errors
+
+| Error | Meaning | Fix |
+|-------|---------|-----|
+| `missing_api_key_config` | Worker has no `API_KEY` secret set. | Add `API_KEY` in Cloudflare → Worker → Settings → Variables, then redeploy. |
+| `missing_github_config` | `GH_OWNER`, `GH_REPO`, or `GH_TOKEN` is missing. | Add the missing variable/secret and redeploy. |
+| `github_dispatch_failed` | GitHub rejected the dispatch. | Check `status`/`response` for details; verify token scopes, repo name, and workflow `repository_dispatch` config. |
 
 ## Local run (Actions side)
 
