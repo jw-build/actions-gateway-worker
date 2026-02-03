@@ -20,8 +20,6 @@ export default {
     if (request.method !== "POST") {
       return json(405, { ok: false, error: "method_not_allowed" });
     }
-
-
       return json(500, { ok: false, error: "missing_api_key_config" });
     }
     const apiKey = request.headers.get("x-api-key");
@@ -32,13 +30,13 @@ export default {
     let body;
     try {
       body = await request.json();
-    } catch {
+    } catch (error) {
       return json(400, { ok: false, error: "invalid_json" });
     }
 
-    const action = body?.action;
-    const args = body?.args;
-    let requestId = body?.request_id ?? crypto.randomUUID();
+    const action = body && body.action;
+    const args = body && body.args;
+    const requestId = body && body.request_id ? body.request_id : crypto.randomUUID();
 
     if (!isNonEmptyString(action)) {
       return json(400, { ok: false, error: "invalid_action" });
