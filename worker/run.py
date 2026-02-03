@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Worker 入口：接收 action / env / request_id，执行对应逻辑。
-由 GitHub Actions workflow 注入环境变量后调用。
+Worker entry: reads action / env / request_id from env, runs the matching logic.
+Invoked by the GitHub Actions workflow with env vars set.
 """
 import os
 import sys
@@ -27,7 +27,7 @@ def main():
     if ACTION == "ping":
         print("pong")
     elif ACTION == "deploy":
-        # 在这里写实际部署逻辑，例如调用 API、执行脚本等
+        # Add real deploy logic here (e.g. call API, run scripts)
         print(f"[worker] deploy to {ENV} (request_id={REQUEST_ID})")
     elif ACTION == "rollback":
         print(f"[worker] rollback on {ENV} (request_id={REQUEST_ID})")
